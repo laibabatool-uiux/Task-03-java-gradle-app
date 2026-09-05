@@ -1,0 +1,14 @@
+[versions]
+javalin = "6.3.0"
+gson    = "2.11.0"
+slf4j   = "2.0.16"
+junit   = "5.11.0"
+
+[libraries]
+javalin       = { module = "io.javalin:javalin",                version.ref = "javalin" }
+gson          = { module = "com.google.code.gson:gson",         version.ref = "gson"    }
+slf4j-simple  = { module = "org.slf4j:slf4j-simple",            version.ref = "slf4j"   }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter",   version.ref = "junit"   }
+
+[bundles]
+web = ["javalin", "gson", "slf4j-simple"]

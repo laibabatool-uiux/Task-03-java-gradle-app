@@ -1,0 +1,190 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'jacoco'
+}
+
+group   = 'com.task03'
+version = '1.0.0'
+
+// ---------------------------------------------------------------------------
+// Toolchain: Gradle guarantees the build compiles/runs on Java 17,
+// regardless of which JDK launched Gradle. Reproducible builds.
+// ---------------------------------------------------------------------------
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    withSourcesJar()      // publishes task-03-app-1.0.0-sources.jar
+    withJavadocJar()      // publishes task-03-app-1.0.0-javadoc.jar
+}
+
+repositories {
+    mavenCentral()
+}
+
+// ---------------------------------------------------------------------------
+// DEPENDENCIES  (versions come from gradle/libs.versions.toml)
+// ---------------------------------------------------------------------------
+dependencies {
+    // ---- Runtime dependencies (on the compile + runtime classpath) ----
+    implementation libs.javalin        // embedded web server
+    implementation libs.gson           // JSON serialization
+
+    // ---- Runtime only (not needed to compile) ----
+    runtimeOnly    libs.slf4j.simple   // logging backend
+
+    // ---- Test-only dependencies ----
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// ---------------------------------------------------------------------------
+// DEPENDENCY MANAGEMENT: conflict resolution + reproducibility
+// ---------------------------------------------------------------------------
+configurations.all {
+    resolutionStrategy {
+        // Pin versions that must not drift, even if a transitive dep asks for more
+        force libs.gson.get().toString()
+
+        // Never silently accept a moving target
+        failOnDynamicVersions()
+        failOnChangingVersions()
+
+        // Fail the build if a cached artifact is older than 24h in CI
+        cacheDynamicVersionsFor 24, 'hours'
+        cacheChangingModulesFor 0,  'seconds'
+
+        // Uncomment to make ANY version conflict a hard build failure.
+        // Leave commented for this project: Javalin/Gson pull in overlapping
+        // slf4j-api versions that Gradle resolves correctly on its own.
+        // failOnVersionConflict()
+    }
+}
+
+// Lock every configuration so local, EC2 and CI builds resolve identical
+// versions. Generate/refresh with:  ./gradlew dependencies --write-locks
+dependencyLocking {
+    lockAllConfigurations()
+}
+
+application {
+    mainClass       = 'com.task03.app.App'
+    applicationName = 'task-03-app'
+    applicationDefaultJvmArgs = ['-Xms128m', '-Xmx512m']
+}
+
+// ---------------------------------------------------------------------------
+// COMPILATION
+// ---------------------------------------------------------------------------
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-Xlint:all' << '-Xlint:-processing'
+}
+
+// ---------------------------------------------------------------------------
+// TESTING + COVERAGE
+// ---------------------------------------------------------------------------
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = false
+    }
+    finalizedBy tasks.jacocoTestReport   // coverage report always follows tests
+}
+
+tasks.named('jacocoTestReport') {
+    dependsOn tasks.test
+    reports {
+        xml.required  = true
+        html.required = true
+        csv.required  = false
+    }
+}
+
+// Quality gate: fail the pipeline if line coverage drops below 70%.
+// Wire into CI with:  ./gradlew test jacocoTestCoverageVerification
+tasks.named('jacocoTestCoverageVerification') {
+    dependsOn tasks.jacocoTestReport
+    violationRules {
+        rule {
+            limit {
+                counter = 'LINE'
+                value   = 'COVEREDRATIO'
+                minimum = 0.70
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// REPRODUCIBLE ARCHIVES (same inputs -> byte-identical outputs)
+// ---------------------------------------------------------------------------
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder  = true
+}
+
+// ---------------------------------------------------------------------------
+// CUSTOM TASKS
+// ---------------------------------------------------------------------------
+tasks.register('task03Info') {
+    group = 'Task-03'
+    description = 'Prints Task-03 build information'
+    doLast {
+        println "==== Task-03 Build Info ===="
+        println "Project : ${project.name}"
+        println "Version : ${project.version}"
+        println "Group   : ${project.group}"
+        println "Main    : ${application.mainClass.get()}"
+        println "Java    : ${System.getProperty('java.version')}"
+        println "Gradle  : ${gradle.gradleVersion}"
+        println "Built   : ${new Date().format('yyyy-MM-dd HH:mm:ss')}"
+    }
+}
+
+// Writes the full runtime dependency tree to a file the CI job can archive
+tasks.register('task03DependencyReport') {
+    group = 'Task-03'
+    description = 'Writes the runtime dependency tree to build/reports/dependencies.txt'
+    def outFile = layout.buildDirectory.file('reports/dependencies.txt')
+    outputs.file(outFile)
+    doLast {
+        def report = new StringBuilder()
+        report << "==== Task-03 Runtime Dependencies ====\n\n"
+        configurations.runtimeClasspath.resolvedConfiguration
+                .resolvedArtifacts
+                .sort { it.moduleVersion.id.toString() }
+                .each { report << "${it.moduleVersion.id}  (${it.file.name})\n" }
+        def f = outFile.get().asFile
+        f.parentFile.mkdirs()
+        f.text = report.toString()
+        println report
+        println "Report written to: ${f}"
+    }
+}
+
+// One command for the CI pipeline: info -> build -> test -> coverage -> package
+tasks.register('task03CiBuild') {
+    group = 'Task-03'
+    description = 'Full CI build: info, compile, test, coverage, dependency report, distribution'
+    dependsOn 'task03Info', 'build', 'jacocoTestReport', 'task03DependencyReport', 'distTar'
+}
+
+// ---------------------------------------------------------------------------
+// PACKAGING
+// ---------------------------------------------------------------------------
+jar {
+    manifest {
+        attributes(
+            'Implementation-Title'  : 'Task-03 Java Gradle App',
+            'Implementation-Version': project.version,
+            'Implementation-Vendor' : 'Task-03',
+            'Main-Class'            : application.mainClass.get(),
+            'Build-Jdk'             : System.getProperty('java.version'),
+            'Build-Timestamp'       : new Date().format("yyyy-MM-dd'T'HH:mm:ss")
+        )
+    }
+}
