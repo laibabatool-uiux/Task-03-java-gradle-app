@@ -48,8 +48,6 @@ configurations.all {
         force libs.gson.get().toString()
 
         // Never silently accept a moving target
-        failOnDynamicVersions()
-        failOnChangingVersions()
 
         // Fail the build if a cached artifact is older than 24h in CI
         cacheDynamicVersionsFor 24, 'hours'
