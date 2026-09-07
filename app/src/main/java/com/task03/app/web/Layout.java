@@ -11,7 +11,7 @@ public final class Layout {
     private static final Map<String, String> NAV = new LinkedHashMap<>();
 
     static {
-        NAV.put("/", "Overview");
+        NAV.put("/", "Overview Laiba");
         NAV.put("/pipeline", "Pipeline");
         NAV.put("/build", "Build");
         NAV.put("/dependencies", "Dependencies");
